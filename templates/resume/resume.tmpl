@@ -1,0 +1,23 @@
+# {{.FullName}}
+
+Email: {{.Email}}
+Phone: {{.Phone}}
+
+## Summary
+{{.Summary}}
+
+## Experience
+{{range .Experience}}
+- {{.Position}} at {{.Company}}
+  {{.Description}}
+{{end}}
+
+## Education
+{{range .Education}}
+- {{.Degree}} at {{.Institution}}
+{{end}}
+
+## Skills
+{{range .Skills}}
+- {{.}}
+{{end}}

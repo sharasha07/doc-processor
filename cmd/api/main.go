@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sharasha07/doc-processor/internal/data"
+	"google.golang.org/genai"
 )
 
 type application struct {
-	logger *slog.Logger
-	cfg    Config
+	logger       *slog.Logger
+	cfg          Config
+	models       data.Models
+	geminiClient *genai.Client
 }
 
 type Config struct {
@@ -19,6 +25,11 @@ type Config struct {
 		ReadTimeout  time.Duration `env:"SERVER_READ_TIMEOUT,required"`
 		WriteTimeout time.Duration `env:"SERVER_WRITE_TIMEOUT,required"`
 		IdleTimeout  time.Duration `env:"SERVER_IDLE_TIMEOUT,required"`
+	}
+	DBURL  string `env:"DB_URL,required"`
+	Gemini struct {
+		Key   string `env:"GEMINI_KEY,required"`
+		Model string `env:"GEMINI_MODEL,required"`
 	}
 }
 
@@ -35,11 +46,41 @@ func main() {
 	err := env.Parse(&cfg)
 	exitOnError(err, "failed to parse environment variables")
 
+	geminiClient, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+		APIKey:  cfg.Gemini.Key,
+		Backend: genai.BackendGeminiAPI,
+	})
+	exitOnError(err, "failed to create Gemini client")
+
+	pool, err := connectToDB(cfg.DBURL)
+	exitOnError(err, "failed to connect to database")
+	defer pool.Close()
+	logger.Info("connected to database")
+
 	app := &application{
-		logger: logger,
-		cfg:    cfg,
+		logger:       logger,
+		cfg:          cfg,
+		models:       data.NewModels(pool),
+		geminiClient: geminiClient,
 	}
 
 	err = app.serve()
 	exitOnError(err, "server failed")
+}
+
+func connectToDB(url string) (*pgxpool.Pool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	return pool, nil
 }

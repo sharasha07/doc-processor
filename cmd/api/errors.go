@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -28,4 +29,11 @@ func (app *application) serverErrorResponse(w http.ResponseWriter, r *http.Reque
 
 	message := "internal server error"
 	app.sendError(w, http.StatusInternalServerError, message)
+}
+
+func (app *application) badRequestResponse(w http.ResponseWriter, err error) {
+	if err == nil {
+		err = errors.New("bad request")
+	}
+	app.sendError(w, http.StatusBadRequest, err.Error())
 }

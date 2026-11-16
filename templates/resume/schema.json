@@ -1,0 +1,22 @@
+{
+  "FullName": "Candidate's full name",
+  "Email": "Candidate's email address",
+  "Phone": "Candidate's phone number",
+  "Summary": "Short professional summary",
+  "Experience": [
+    {
+      "Position": "Job title",
+      "Company": "Company name",
+      "Description": "Job responsibilities and achievements"
+    }
+  ],
+  "Education": [
+    {
+      "Degree": "Degree or qualification",
+      "Institution": "University or institution name"
+    }
+  ],
+  "Skills": [
+    "Skill name"
+  ]
+}

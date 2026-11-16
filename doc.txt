@@ -1,0 +1,4 @@
+POST /v1/documents
+
+GET /v1/documents/{id}/exports/docx
+GET /v1/documents/{id}/exports/pdf

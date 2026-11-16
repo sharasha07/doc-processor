@@ -1,0 +1,12 @@
+{
+  "PassportNumber": "Passport document number",
+  "FullName": "Full name exactly as printed on passport",
+  "Nationality": "Passport holder's nationality",
+  "DateOfBirth": "Date of birth (YYYY-MM-DD)",
+  "Gender": "Gender as printed on passport",
+  "PlaceOfBirth": "Place of birth",
+  "IssueDate": "Passport issue date (YYYY-MM-DD)",
+  "ExpiryDate": "Passport expiration date (YYYY-MM-DD)",
+  "IssuingAuthority": "Authority that issued the passport",
+  "CountryCode": "Three-letter passport issuing country code"
+}
