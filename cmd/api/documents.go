@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
 	"strings"
+	"text/template"
+	"time"
+	"uuid"
 
 	"github.com/fabiomarini/wordingo"
 	"github.com/go-pdf/fpdf"
 	"github.com/rahulpoonia29/extractous-go"
+	"github.com/redis/go-redis/v9"
 	"github.com/sharasha07/doc-processor/internal/data"
 	"google.golang.org/genai"
 )
@@ -48,8 +52,13 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 
 	buffer := make([]byte, 512)
 	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if n == 0 {
+		app.badRequestResponse(w, errors.New("document is empty"))
 		return
 	}
 
@@ -84,22 +93,30 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// decide supported document template type
-	entries, err := os.ReadDir("./templates")
+	entries, err := os.ReadDir(app.cfg.TemplatesDir)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	names := make([]string, len(entries))
-	for i, entry := range entries {
-		names[i] = entry.Name()
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
 	}
 
 	prompt := fmt.Sprintf(`Based on the document, determine its type from the following list: %s. As output return only 1 name
 		of the type from the following list and nothing else, if it doesn't match any of them, just return: none`,
 		strings.Join(names, " "))
 
-	content := genai.Text(text + prompt)
+	var content []*genai.Content
+	if len(text) > 1000 {
+		content = genai.Text(text[:1000] + prompt)
+	} else {
+		content = genai.Text(text + prompt)
+	}
+
 	resp, err := app.geminiClient.Models.GenerateContent(
 		r.Context(),
 		app.cfg.Gemini.Model,
@@ -119,7 +136,7 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// send schema to LLM to fill it and return as JSON
-	path := fmt.Sprintf("./templates/%s/schema.json", templateType)
+	path := fmt.Sprintf("%s/%s/schema.json", app.cfg.TemplatesDir, templateType)
 	schema, err := os.ReadFile(path)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -147,19 +164,29 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// create and insert document in database
+	// create and insert document in redis
 	fields := make(map[string]any)
 	if err := json.Unmarshal([]byte(documentFields), &fields); err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
+	now := time.Now()
 	document := data.Document{
-		Type:   templateType,
-		Fields: fields,
+		ID:        uuid.New(),
+		Type:      templateType,
+		Fields:    fields,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
-	if err := app.models.Documents.Insert(r.Context(), &document); err != nil {
+	payload, err := json.Marshal(document)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if err := app.redisClient.Set(r.Context(), document.ID.String(), payload, app.cfg.Redis.TTL).Err(); err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
@@ -168,6 +195,209 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 		app.serverErrorResponse(w, r, err)
 		return
 	}
+}
+
+func (app *application) getReviewHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	value, err := app.redisClient.Get(r.Context(), id.String()).Result()
+	if err != nil {
+		switch {
+		case errors.Is(err, redis.Nil):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	var document data.Document
+	if err := json.Unmarshal([]byte(value), &document); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if err := app.writeJSON(w, http.StatusOK, envelope{"document": document}); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) updateReviewHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	input := make(map[string]any)
+
+	if err := app.readJSON(w, r, &input); err != nil {
+		app.badRequestResponse(w, err)
+		return
+	}
+
+	value, err := app.redisClient.Get(r.Context(), id.String()).Result()
+	if err != nil {
+		switch {
+		case errors.Is(err, redis.Nil):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	var document data.Document
+	if err := json.Unmarshal([]byte(value), &document); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	unknown := make([]string, 0, len(input))
+	for key := range maps.Keys(input) {
+		if _, ok := document.Fields[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		app.badRequestResponse(w, fmt.Errorf("body contains unknown keys: %s", strings.Join(unknown, ", ")))
+		return
+	}
+
+	maps.Copy(document.Fields, input)
+	document.UpdatedAt = time.Now()
+
+	payload, err := json.Marshal(document)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	ttl, err := app.redisClient.TTL(r.Context(), id.String()).Result()
+	if err != nil || ttl <= 0 {
+		ttl = app.cfg.Redis.TTL
+	}
+
+	if err := app.redisClient.Set(r.Context(), id.String(), payload, ttl).Err(); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if err := app.writeJSON(w, http.StatusOK, envelope{"document": document}); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) getDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	document, err := app.models.Documents.Get(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrNoRecord):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	if err := app.writeJSON(w, http.StatusOK, envelope{"document": document}); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) deleteDocumentHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	if err = app.models.Documents.Delete(r.Context(), id); err != nil {
+		switch {
+		case errors.Is(err, data.ErrNoRecord):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) acceptReviewHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	value, err := app.redisClient.GetDel(r.Context(), id.String()).Result()
+	if err != nil {
+		switch {
+		case errors.Is(err, redis.Nil):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	var document data.Document
+	if err := json.Unmarshal([]byte(value), &document); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if err := app.models.Documents.Insert(r.Context(), &document); err != nil {
+		if payload, err := json.Marshal(document); err == nil {
+			if err := app.redisClient.Set(r.Context(), id.String(), payload, app.cfg.Redis.TTL).Err(); err != nil {
+				app.logger.Error("failed to restore document in redis", "err", err)
+			}
+		}
+
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if err := app.writeJSON(w, http.StatusCreated, envelope{"document": document}); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) rejectReviewHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	deleted, err := app.redisClient.Del(r.Context(), id.String()).Result()
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if deleted == 0 {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) generateDOCXHandler(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +418,7 @@ func (app *application) generateDOCXHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	path := fmt.Sprintf("./templates/%s/%s.tmpl", document.Type, document.Type)
+	path := fmt.Sprintf("%s/%s/%s.tmpl", app.cfg.TemplatesDir, document.Type, document.Type)
 	tmpl, err := template.ParseFiles(path)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -236,7 +466,7 @@ func (app *application) generatePDFHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	path := fmt.Sprintf("./templates/%s/%s.tmpl", document.Type, document.Type)
+	path := fmt.Sprintf("%s/%s/%s.tmpl", app.cfg.TemplatesDir, document.Type, document.Type)
 	tmpl, err := template.ParseFiles(path)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
