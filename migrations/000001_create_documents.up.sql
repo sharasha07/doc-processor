@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS documents (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY,
     type TEXT NOT NULL,
     fields JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ(0) NOT NULL DEFAULT NOW(),
-    version INTEGER NOT NULL DEFAULT 1
+    updated_at TIMESTAMPTZ(0) NOT NULL DEFAULT NOW()
 );

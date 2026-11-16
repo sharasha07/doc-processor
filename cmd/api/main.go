@@ -8,6 +8,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/sharasha07/doc-processor/internal/data"
 	"google.golang.org/genai"
 )
@@ -16,6 +17,7 @@ type application struct {
 	logger       *slog.Logger
 	cfg          Config
 	models       data.Models
+	redisClient  *redis.Client
 	geminiClient *genai.Client
 }
 
@@ -26,7 +28,12 @@ type Config struct {
 		WriteTimeout time.Duration `env:"SERVER_WRITE_TIMEOUT,required"`
 		IdleTimeout  time.Duration `env:"SERVER_IDLE_TIMEOUT,required"`
 	}
-	DBURL  string `env:"DB_URL,required"`
+	TemplatesDir string `env:"TEMPLATES_DIR,required"`
+	DBURL        string `env:"DB_URL,required"`
+	Redis        struct {
+		URL string        `env:"REDIS_URL,required"`
+		TTL time.Duration `env:"REDIS_TTL,required"`
+	}
 	Gemini struct {
 		Key   string `env:"GEMINI_KEY,required"`
 		Model string `env:"GEMINI_MODEL,required"`
@@ -57,10 +64,15 @@ func main() {
 	defer pool.Close()
 	logger.Info("connected to database")
 
+	options, err := redis.ParseURL(cfg.Redis.URL)
+	exitOnError(err, "failed to parse redis URL")
+	redisClient := redis.NewClient(options)
+
 	app := &application{
 		logger:       logger,
 		cfg:          cfg,
 		models:       data.NewModels(pool),
+		redisClient:  redisClient,
 		geminiClient: geminiClient,
 	}
 
