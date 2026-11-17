@@ -14,6 +14,9 @@ func (app *application) routes() http.Handler {
 	// health & metrics
 	router.HandlerFunc(http.MethodGet, "/health", app.healthHandler)
 
+	// templates
+	router.HandlerFunc(http.MethodPost, "/v1/templates", app.createTemplateHandler)
+
 	// documents
 	router.HandlerFunc(http.MethodPost, "/v1/documents", app.uploadDocumentHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/documents/:id/review", app.getReviewHandler)
