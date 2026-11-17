@@ -1,7 +1,7 @@
 .env
 .git
 .github
-native/darwin_arm64
-native/windows_amd64
+native
 README.md
 Makefile
+docker-compose.yml
