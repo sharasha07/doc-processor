@@ -1,6 +1,7 @@
 package main
 
 import (
+	"expvar"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
@@ -13,6 +14,7 @@ func (app *application) routes() http.Handler {
 
 	// health & metrics
 	router.HandlerFunc(http.MethodGet, "/health", app.healthHandler)
+	router.Handler(http.MethodGet, "/metrics", expvar.Handler())
 
 	// templates
 	router.HandlerFunc(http.MethodPost, "/v1/templates", app.createTemplateHandler)
@@ -30,5 +32,5 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodGet, "/v1/documents/:id/exports/docx", app.generateDOCXHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/documents/:id/exports/pdf", app.generatePDFHandler)
 
-	return app.recoverPanic(router)
+	return app.metrics(app.recoverPanic(router))
 }
