@@ -1,0 +1,7 @@
+.env
+.git
+.github
+native/darwin_arm64
+native/windows_amd64
+README.md
+Makefile

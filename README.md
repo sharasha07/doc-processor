@@ -48,3 +48,32 @@ doc-processor/
 - `GET /v1/documents/:id/exports/pdf` - Export persistently stored document data as a PDF file.
 
 ## Setup instructions
+
+### Run locally with Docker
+
+1. Copy `.env.example` to `.env`.
+
+   Fill in these values:
+
+   ```
+   PORT=
+   SERVER_READ_TIMEOUT=
+   SERVER_WRITE_TIMEOUT=
+   SERVER_IDLE_TIMEOUT=
+   GEMINI_KEY=
+   GEMINI_MODEL=
+   GEMINI_INPUT_PRICE_PER_MTOKENS=
+   GEMINI_OUTPUT_PRICE_PER_MTOKENS=
+   ```
+
+2. Start everything:
+
+   ```
+   docker compose up --build
+   ```
+
+3. Stop and remove everything:
+
+   ```
+   docker compose down -v
+   ```
