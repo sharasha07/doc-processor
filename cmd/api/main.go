@@ -67,6 +67,7 @@ func main() {
 	options, err := redis.ParseURL(cfg.Redis.URL)
 	exitOnError(err, "failed to parse redis URL")
 	redisClient := redis.NewClient(options)
+	defer redisClient.Close()
 
 	app := &application{
 		logger:       logger,
