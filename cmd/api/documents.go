@@ -117,15 +117,28 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 		content = genai.Text(text + prompt)
 	}
 
+	start := time.Now()
 	resp, err := app.geminiClient.Models.GenerateContent(
 		r.Context(),
 		app.cfg.Gemini.Model,
 		content,
 		nil,
 	)
+	geminiProcessingTimeSeconds.Add(time.Since(start).Seconds())
+
 	if err != nil {
+		geminiTaskStatus.Add("detect_document_type_fail", 1)
 		app.serverErrorResponse(w, r, err)
 		return
+	}
+	geminiTaskStatus.Add("detect_document_type_success", 1)
+
+	if resp.UsageMetadata != nil {
+		geminiInputTokens.Add(int64(resp.UsageMetadata.PromptTokenCount))
+		geminiOutputTokens.Add(int64(resp.UsageMetadata.CandidatesTokenCount))
+		geminiTotalTokens.Add(int64(resp.UsageMetadata.TotalTokenCount))
+		geminiEstimatedCostUSD.Add(float64(resp.UsageMetadata.PromptTokenCount)/1e6*app.cfg.Gemini.InputPricePerMTokens +
+			float64(resp.UsageMetadata.CandidatesTokenCount)/1e6*app.cfg.Gemini.OutputPricePerMTokens)
 	}
 
 	templateType := strings.TrimSpace(resp.Text())
@@ -147,15 +160,29 @@ func (app *application) uploadDocumentHandler(w http.ResponseWriter, r *http.Req
 			corresponding fields with zero values. Don't add anything. Return a raw JSON object only.`
 
 	content = genai.Text(text + string(schema) + prompt)
+
+	start = time.Now()
 	resp, err = app.geminiClient.Models.GenerateContent(
 		r.Context(),
 		app.cfg.Gemini.Model,
 		content,
 		nil,
 	)
+	geminiProcessingTimeSeconds.Add(time.Since(start).Seconds())
+
 	if err != nil {
+		geminiTaskStatus.Add("fill_schema_fail", 1)
 		app.serverErrorResponse(w, r, err)
 		return
+	}
+	geminiTaskStatus.Add("fill_schema_success", 1)
+
+	if resp.UsageMetadata != nil {
+		geminiInputTokens.Add(int64(resp.UsageMetadata.PromptTokenCount))
+		geminiOutputTokens.Add(int64(resp.UsageMetadata.CandidatesTokenCount))
+		geminiTotalTokens.Add(int64(resp.UsageMetadata.TotalTokenCount))
+		geminiEstimatedCostUSD.Add(float64(resp.UsageMetadata.PromptTokenCount)/1e6*app.cfg.Gemini.InputPricePerMTokens +
+			float64(resp.UsageMetadata.CandidatesTokenCount)/1e6*app.cfg.Gemini.OutputPricePerMTokens)
 	}
 
 	documentFields := strings.TrimSpace(resp.Text())

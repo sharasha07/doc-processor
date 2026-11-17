@@ -35,8 +35,10 @@ type Config struct {
 		TTL time.Duration `env:"REDIS_TTL,required"`
 	}
 	Gemini struct {
-		Key   string `env:"GEMINI_KEY,required"`
-		Model string `env:"GEMINI_MODEL,required"`
+		Key                   string  `env:"GEMINI_KEY,required"`
+		Model                 string  `env:"GEMINI_MODEL,required"`
+		InputPricePerMTokens  float64 `env:"GEMINI_INPUT_PRICE_PER_MTOKENS,required"`
+		OutputPricePerMTokens float64 `env:"GEMINI_OUTPUT_PRICE_PER_MTOKENS,required"`
 	}
 }
 

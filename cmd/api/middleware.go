@@ -10,10 +10,19 @@ import (
 )
 
 var (
-	totalRequestsReceived           = expvar.NewInt("total_requests_received")
-	totalResponsesSent              = expvar.NewInt("total_responses_sent")
-	totalProcessingTimeMicroseconds = expvar.NewInt("total_processing_time_microseconds")
-	totalResponsesSentByStatus      = expvar.NewMap("total_responses_sent_by_status")
+	totalRequestsReceived      = expvar.NewInt("total_requests_received")
+	totalResponsesSent         = expvar.NewInt("total_responses_sent")
+	totalProcessingTimeSeconds = expvar.NewFloat("total_processing_time_seconds")
+	totalResponsesSentByStatus = expvar.NewMap("total_responses_sent_by_status")
+)
+
+var (
+	geminiInputTokens           = expvar.NewInt("gemini_input_tokens")
+	geminiOutputTokens          = expvar.NewInt("gemini_output_tokens")
+	geminiTotalTokens           = expvar.NewInt("gemini_total_tokens")
+	geminiEstimatedCostUSD      = expvar.NewFloat("gemini_estimated_cost_usd")
+	geminiProcessingTimeSeconds = expvar.NewFloat("gemini_processing_time_seconds")
+	geminiTaskStatus            = expvar.NewMap("gemini_task_status")
 )
 
 func (app *application) metrics(next http.Handler) http.Handler {
@@ -23,7 +32,7 @@ func (app *application) metrics(next http.Handler) http.Handler {
 		metrics := httpsnoop.CaptureMetrics(next, w, r)
 
 		totalResponsesSent.Add(1)
-		totalProcessingTimeMicroseconds.Add(metrics.Duration.Microseconds())
+		totalProcessingTimeSeconds.Add(metrics.Duration.Seconds())
 		totalResponsesSentByStatus.Add(strconv.Itoa(metrics.Code), 1)
 	})
 }
