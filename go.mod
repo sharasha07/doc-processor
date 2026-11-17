@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/fabiomarini/wordingo v0.2.2
+	github.com/felixge/httpsnoop v1.1.0
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/julienschmidt/httprouter v1.3.0
